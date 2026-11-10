@@ -9,9 +9,9 @@
 #include <Adafruit_Sensor.h>
 #include <Adafruit_NeoPixel.h>
 
-#define LED_PIN 14
+#define LED_PIN 17
 #define LED_COUNT 30
-#define BRIGHTNESS 150  // Reduce for real application
+#define BRIGHTNESS 20  // Reduce for real application
 
 /********************************
             |     /
@@ -28,12 +28,12 @@
 
 
 axis:   leds:
-* x-    25...29
-* x+    20...24
-* y-    15...19
-* y+    10...14
-* z-    05...09
-* z+    04...00
+* x-    15...19
+* x+    10...14
+* y-    24...29
+* y+    20...24
+* z-    04...00
+* z+    05...09
 ********************************/
 
 // Acceleration settings
@@ -49,7 +49,7 @@ axis:   leds:
 
 // I2C pins
 #define SDA_PIN 21
-#define SCL_PIN 23
+#define SCL_PIN 22
 
 Adafruit_MPU6050 mpu;
 
@@ -72,11 +72,13 @@ int calculateLEDCount(float acceleration) {
   );
 }
 
+
 void setAxisLEDs(float acceleration,
                  int negativeStart,
                  int positiveStart,
                  bool reversePositive,
-                 bool invertColors = false) {
+                 bool invertColors = false,
+                 bool reverseNegative = false) {
 
   int count = calculateLEDCount(acceleration);
 
@@ -85,9 +87,12 @@ void setAxisLEDs(float acceleration,
 
   if (acceleration < 0) {
     for (int i = 0; i < count; i++) {
+      int led = reverseNegative
+        ? negativeStart - i
+        : negativeStart + i;
+
       strip.setPixelColor(
-        negativeStart + i,
-        invertColors ? green : red
+        led, invertColors ? green : red
       );
     }
   }
@@ -98,22 +103,30 @@ void setAxisLEDs(float acceleration,
         : positiveStart - i;
 
       strip.setPixelColor(
-        led,
-        invertColors ? red : green
+        led, invertColors ? red : green
       );
     }
   }
 }
 
+
+
 void setLEDs(float accX, float accY, float accZ) {
   strip.clear();
 
-  setAxisLEDs(-accX, 25, 20, true, true);
-  setAxisLEDs( accY, 15, 10, true);
-  setAxisLEDs( accZ,  5,  4, false);
+  // X: Negativ = Rot, Positiv = Grün
+  setAxisLEDs(-accX, 15, 10, true, false);
+
+  // Y unverändert
+  setAxisLEDs(accY, 25, 20, true);
+
+  // Z unverändert
+  setAxisLEDs(accZ, 4, 5, true, false, true);
 
   strip.show();
 }
+
+
 
 void setup() {
   Serial.begin(115200);
@@ -153,14 +166,14 @@ void loop() {
   setLEDs(accX, accY, accZ);
 
   // Debug output
-  /*
+  
   Serial.print("X: ");
   Serial.print(accX, 2);
   Serial.print(" | Y: ");
   Serial.print(accY, 2);
   Serial.print(" | Z: ");
   Serial.println(accZ, 2);
-  */
+  
 
   delay(UPDATE_INTERVAL);
 }
