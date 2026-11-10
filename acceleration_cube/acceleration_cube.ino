@@ -11,7 +11,8 @@
 
 #define LED_PIN 17
 #define LED_COUNT 30
-#define BRIGHTNESS 20  // Reduce for real application
+// 20 -> ~32mA, 40 -> ~39mA, 100 -> ~58mA, 150 -> ~74mA
+#define BRIGHTNESS 10
 
 /********************************
             |     /
@@ -37,15 +38,19 @@ axis:   leds:
 ********************************/
 
 // Acceleration settings
-#define MAX_ACCEL 10.0f
-#define SENSITIVITY 0.7f
+#define MAX_ACCEL 20.0f
+#define SENSITIVITY 1.6f
+#define LED_DEADZONE 1.2f
 #define UPDATE_INTERVAL 50
+#define GRAVITY_FILTER_ALPHA 0.90f
 
-// SENSITIVITY:
-// 1.0 = Linear
-// 0.7 = Slightly enhanced (recommended)
-// 0.5 = Square root
-// 0.3 = Very sensitive
+#define SENSOR_ROTATION_DEG 90
+#define SENSOR_ROTATION_CW true
+#define SENSOR_INVERT_Y true
+
+#define COLOR_X 0x8400FF
+#define COLOR_Y 0x0080FF
+#define COLOR_Z 0xFF0095
 
 // I2C pins
 #define SDA_PIN 21
@@ -59,8 +64,13 @@ Adafruit_NeoPixel strip(
 
 // Calculate LED count with nonlinear scaling
 int calculateLEDCount(float acceleration) {
+  const float absAcc = fabsf(acceleration);
+  if (absAcc <= LED_DEADZONE) {
+    return 0;
+  }
+
   float normalized = constrain(
-    fabsf(acceleration) / MAX_ACCEL,
+    (absAcc - LED_DEADZONE) / (MAX_ACCEL - LED_DEADZONE),
     0.0f, 1.0f
   );
 
@@ -76,37 +86,67 @@ int calculateLEDCount(float acceleration) {
 void setAxisLEDs(float acceleration,
                  int negativeStart,
                  int positiveStart,
-                 bool reversePositive,
-                 bool invertColors = false,
-                 bool reverseNegative = false) {
+                 bool reverseNegative,
+                 uint32_t color) {
 
   int count = calculateLEDCount(acceleration);
-
-  uint32_t red = strip.Color(255, 0, 0);
-  uint32_t green = strip.Color(0, 255, 0);
 
   if (acceleration < 0) {
     for (int i = 0; i < count; i++) {
       int led = reverseNegative
         ? negativeStart - i
         : negativeStart + i;
-
-      strip.setPixelColor(
-        led, invertColors ? green : red
-      );
+      strip.setPixelColor(led, color);
     }
   }
-  else if (acceleration > 0) {
+  else {
     for (int i = 0; i < count; i++) {
-      int led = reversePositive
-        ? positiveStart + i
-        : positiveStart - i;
-
-      strip.setPixelColor(
-        led, invertColors ? red : green
-      );
+      int led = positiveStart + i;
+      strip.setPixelColor(led, color);
     }
   }
+}
+
+void applySensorRotation(float &x, float &y, float &z) {
+#if SENSOR_ROTATION_DEG == 90
+  const float inX = x;
+  const float inY = y;
+  (void)z;
+
+  if (SENSOR_ROTATION_CW) {
+    x = inY;
+    y = -inX;
+  } else {
+    x = -inY;
+    y = inX;
+  }
+#endif
+
+#if SENSOR_INVERT_Y
+  y = -y;
+#endif
+}
+
+void removeGravity(float &x, float &y, float &z) {
+  static bool gravityInitialized = false;
+  static float gravityX = 0.0f;
+  static float gravityY = 0.0f;
+  static float gravityZ = 0.0f;
+
+  if (!gravityInitialized) {
+    gravityX = x;
+    gravityY = y;
+    gravityZ = z;
+    gravityInitialized = true;
+  }
+
+  gravityX = GRAVITY_FILTER_ALPHA * gravityX + (1.0f - GRAVITY_FILTER_ALPHA) * x;
+  gravityY = GRAVITY_FILTER_ALPHA * gravityY + (1.0f - GRAVITY_FILTER_ALPHA) * y;
+  gravityZ = GRAVITY_FILTER_ALPHA * gravityZ + (1.0f - GRAVITY_FILTER_ALPHA) * z;
+
+  x -= gravityX;
+  y -= gravityY;
+  z -= gravityZ;
 }
 
 
@@ -114,14 +154,32 @@ void setAxisLEDs(float acceleration,
 void setLEDs(float accX, float accY, float accZ) {
   strip.clear();
 
-  // X: Negativ = Rot, Positiv = Grün
-  setAxisLEDs(-accX, 15, 10, true, false);
+  const uint8_t xR = (uint8_t)((COLOR_X >> 16) & 0xFF);
+  const uint8_t xG = (uint8_t)((COLOR_X >> 8) & 0xFF);
+  const uint8_t xB = (uint8_t)(COLOR_X & 0xFF);
+  const uint8_t yR = (uint8_t)((COLOR_Y >> 16) & 0xFF);
+  const uint8_t yG = (uint8_t)((COLOR_Y >> 8) & 0xFF);
+  const uint8_t yB = (uint8_t)(COLOR_Y & 0xFF);
+  const uint8_t zR = (uint8_t)((COLOR_Z >> 16) & 0xFF);
+  const uint8_t zG = (uint8_t)((COLOR_Z >> 8) & 0xFF);
+  const uint8_t zB = (uint8_t)(COLOR_Z & 0xFF);
 
-  // Y unverändert
-  setAxisLEDs(accY, 25, 20, true);
+  const uint32_t intensity = (255U * (BRIGHTNESS + 1U)) >> 8;
+  const uint32_t xColor = strip.Color((xR * intensity) / 255U,
+                                      (xG * intensity) / 255U,
+                                      (xB * intensity) / 255U);
+  const uint32_t yColor = strip.Color((yR * intensity) / 255U,
+                                      (yG * intensity) / 255U,
+                                      (yB * intensity) / 255U);
+  const uint32_t zColor = strip.Color((zR * intensity) / 255U,
+                                      (zG * intensity) / 255U,
+                                      (zB * intensity) / 255U);
 
-  // Z unverändert
-  setAxisLEDs(accZ, 4, 5, true, false, true);
+  setAxisLEDs(-accX, 15, 10, false, xColor);
+
+  setAxisLEDs(accY, 25, 20, false, yColor);
+
+  setAxisLEDs(accZ, 4, 5, true, zColor);
 
   strip.show();
 }
@@ -162,6 +220,9 @@ void loop() {
   float accX = a.acceleration.x;
   float accY = a.acceleration.y;
   float accZ = a.acceleration.z;
+
+  applySensorRotation(accX, accY, accZ);
+  removeGravity(accX, accY, accZ);
 
   setLEDs(accX, accY, accZ);
 

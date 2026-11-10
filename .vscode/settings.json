@@ -1,0 +1,15 @@
+{
+    "idf.currentSetup": "C:\\esp\\v6.0\\esp-idf",
+    "idf.port": "COM4",
+    "idf.flashType": "UART",
+    "idf.openOcdConfigs": [
+        "board/esp32-wrover-kit-3.3v.cfg"
+    ],
+    "idf.customExtraVars": {},
+    "clangd.path": "C:\\Espressif\\tools\\esp-clang\\esp-20.1.1_20250829\\esp-clang\\bin\\clangd.exe",
+    "clangd.arguments": [
+      "--background-index",
+      "--query-driver=**",
+      "--compile-commands-dir=c:\\Users\\jadur\\Desktop\\dev\\acceleration_cube\\build"
+    ]
+}
